@@ -45,8 +45,18 @@ void inicializaFilosofos() {
         filosofos[i].id = i;
         filosofos[i].state = STATE_THINKING;
         filosofos[i].numRefeicoes = 0;
-        sem_init(&filosofos[i].semAlterandoGrafos, 0, 1);
-        sem_init(&filosofos[i].semAguardandoGarfo, 0, 0);
+
+        //Semafaro inicializado em 1, simulando mutex.
+        if(sem_init(&filosofos[i].semAlterandoGrafos, 0, 1) != 0) {
+            printf("Erro ao inicializar semafaro!\n");
+            exit(1);
+        }
+
+        //Semafaro inicializado em 0, simulando variavel de condicao.
+        if(sem_init(&filosofos[i].semAguardandoGarfo, 0, 0) != 0) {
+            printf("Erro ao inicializar semafaro!\n");
+            exit(1);
+        }
     }
 }
 

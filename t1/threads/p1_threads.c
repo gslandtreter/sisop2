@@ -270,13 +270,16 @@ void * threadWork (void * arg) {
 int main (int argc, char **argv) {
     pthread_t * threads;
 
-
-    /*Matrix * matrix100 = generateRandomMatrix(1000, 1000, 100);
-    Matrix * matrix101 = generateRandomMatrix(1000, 1000, 100);
+    /*
+    Matrix * matrix100 = generateRandomMatrix(2000, 2000, 100);
+    Matrix * matrix101 = generateRandomMatrix(2000, 2000, 100);
 
     writeMatrixToFile(matrix100, "matrizgrande1.txt");
-    writeMatrixToFile(matrix101, "matrizgrande2.txt");*/
+    writeMatrixToFile(matrix101, "matrizgrande2.txt");
 
+    return 0;
+    */
+    
     //Numero default de threads;
     int numThreads = 1;
 
