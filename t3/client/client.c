@@ -17,6 +17,8 @@ int socketDescriptor;
 pthread_t readThreadDescriptor;
 pthread_mutex_t screenMutex = PTHREAD_MUTEX_INITIALIZER;
 
+char windowTitle[64];
+
 WINDOW * chatWindow, * inputWindow;
 
 void screenShutdown() {
@@ -39,7 +41,21 @@ void clearInputWindow() {
 
     wclear(inputWindow);
     wborder(inputWindow, '|', '|', '-', '-', '+', '+', '+', '+');
+
+    wmove(inputWindow, 1, 2);
+
     wrefresh(inputWindow);
+
+    pthread_mutex_unlock(&screenMutex);
+}
+
+void clearChatWindow() {
+
+    pthread_mutex_lock(&screenMutex);
+
+    wclear(chatWindow);
+    wborder(chatWindow, '|', '|', '-', '-', '+', '+', '+', '+');
+    wrefresh(chatWindow);
 
     pthread_mutex_unlock(&screenMutex);
 }
@@ -55,6 +71,11 @@ void printToChatWindow(char * strMensagem) {
 
     wborder(chatWindow, '|', '|', '-', '-', '+', '+', '+', '+');
 
+    int parent_x, parent_y;
+    getmaxyx(stdscr, parent_y, parent_x);
+
+    mvwprintw(chatWindow, 0, (parent_x - strlen(windowTitle)) / 2, windowTitle);
+
     wrefresh(chatWindow);
     wrefresh(inputWindow);
 
@@ -68,6 +89,21 @@ int parseReceivedMessage(strMensagem * message) {
         case SEND_MSG: {
 
             printToChatWindow(message->msgBuffer);
+            break;
+        }
+
+        case ROOM_JOINED: {
+
+            clearChatWindow();
+
+            char szBuffer[1024];
+            sprintf(szBuffer, "-- Voce entrou na sala %s --\n", message->msgBuffer);
+
+            sprintf(windowTitle, "  %s  ", message->msgBuffer);
+
+            printToChatWindow(szBuffer);
+
+            clearInputWindow();
             break;
         }
     }
@@ -258,12 +294,13 @@ int main(int argc, char *argv[]) {
     printf("Conectado!\n");
 
     doHandShake();
+    drawWindows();
 
     //Sala geral
     joinChatRoom(0);
 
     pthread_create(&readThreadDescriptor, NULL, readThread, NULL);
-    drawWindows();
+    
     mainLoop();
     
     close(socketDescriptor);

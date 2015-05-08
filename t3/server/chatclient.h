@@ -31,6 +31,7 @@ struct structSalaChat {
 
 	int id;
 	char roomName[64];
+	int userCount;
 
 	struct structSalaChat * next;
 };
