@@ -177,6 +177,22 @@ void joinChatRoom(int roomId) {
     sendMessage(&mensagem);
 }
 
+int changeName(const char * newName) {
+
+    if(!newName || strlen(newName) > 64) {
+        //Nome muito longo!
+        return 0;
+    }
+
+    strMensagem mensagem;
+    mensagem.commandCode = CHANGE_NAME;
+    strcpy(mensagem.msgBuffer, newName);
+    mensagem.bufferLength = strlen(mensagem.msgBuffer);
+
+    sendMessage(&mensagem);
+
+}
+
 void doHandShake () {
     strMensagem mensagem;
     char buffer[256];
@@ -190,11 +206,7 @@ void doHandShake () {
         bzero(buffer, 256);
         wgetstr(nameWindow, buffer);
 
-        mensagem.commandCode = CHANGE_NAME;
-        strcpy(mensagem.msgBuffer, buffer);
-        mensagem.bufferLength = strlen(mensagem.msgBuffer);
-        
-        sendMessage(&mensagem);
+        changeName(buffer);
 
         bzero(&mensagem, sizeof(strMensagem));
 
@@ -209,9 +221,59 @@ void doHandShake () {
     } while(mensagem.commandCode != NAME_CHANGED_OK);
 }
 
-void mainLoop() {
+int stringStartsWith(const char * str1, const char * str2) {
+    if (strncmp(str1, str2, strlen(str2)) == 0) {
+        return 1;
+    }
+    else return 0;
+}
+
+void parseUserInput(const char * userInput) {
+
+    if(!userInput || strlen(userInput) == 0) 
+        return;
 
     strMensagem mensagem;
+
+    if (stringStartsWith(userInput, "/")) {
+        // Comando
+
+        if(stringStartsWith(userInput, "/help")) {
+            //TODO: Print Help!
+        }
+        else if(stringStartsWith(userInput, "/changename ")) {
+            char * newName = strchr(userInput, ' ') + 1;
+            if(changeName(newName)) {
+                printToChatWindow("Nome alterado com sucesso!");
+            }
+            else {
+                printToChatWindow("Erro ao alterar nome!");
+            }
+
+        }
+
+        //TODO: CreateRoom LeaveRoom JoinRoom
+        
+        else {
+            //Comando invalido
+            printToChatWindow("Comando invalido!");
+        }
+    }
+
+    else {
+        // Mensagem normal
+        mensagem.commandCode = SEND_MSG;
+        strcpy(mensagem.msgBuffer, userInput);
+        mensagem.bufferLength = strlen(mensagem.msgBuffer);
+
+        sendMessage(&mensagem);
+    }
+    
+
+}
+
+void mainLoop() {
+
     char buffer[256];
     int bytesTransfered;
 
@@ -225,11 +287,7 @@ void mainLoop() {
         wgetstr(inputWindow, buffer);
         clearInputWindow();
 
-        mensagem.commandCode = SEND_MSG;
-        strcpy(mensagem.msgBuffer, buffer);
-        mensagem.bufferLength = strlen(mensagem.msgBuffer);
-        
-        sendMessage(&mensagem);
+        parseUserInput(buffer);
     }
 
 }
@@ -296,11 +354,11 @@ int main(int argc, char *argv[]) {
     doHandShake();
     drawWindows();
 
+    pthread_create(&readThreadDescriptor, NULL, readThread, NULL);
+
     //Sala geral
     joinChatRoom(0);
 
-    pthread_create(&readThreadDescriptor, NULL, readThread, NULL);
-    
     mainLoop();
     
     close(socketDescriptor);

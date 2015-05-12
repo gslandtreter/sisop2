@@ -73,7 +73,7 @@ int createRoom(char * roomName) {
 
     novaSala->id = newRoomId++;
     strcpy(novaSala->roomName, roomName);
-    novaSala->userCount = 0;
+    //novaSala->userCount = 0;
 
     sglib_strSalaChat_add(&listaSalasChat, novaSala);
 
@@ -96,14 +96,31 @@ int clientJoinRoom(strCliente * client, int roomId) {
 
     struct sglib_strSalaChat_iterator iterator;
     strSalaChat * elemIterator;
+    strMensagem msgToSend;
 
     for(elemIterator = sglib_strSalaChat_it_init(&iterator, listaSalasChat); elemIterator != NULL; elemIterator = sglib_strSalaChat_it_next(&iterator)) {
 
         if(elemIterator->id == roomId) {
             //Sala encontrada
+
+            int oldRoomId = client->roomId;
+
+            if(oldRoomId != -1) {
+                msgToSend.commandCode = SEND_MSG;
+                sprintf(msgToSend.msgBuffer,"> %s saiu da sala!", client->nickName);
+                msgToSend.bufferLength = strlen(msgToSend.msgBuffer);
+                broadCastMessage(&msgToSend, oldRoomId);
+            }
+
             client->roomId = roomId;
 
             printf("[INFO] Cliente [%d][%s] entrou na sala [%d]\n", client->id, client->nickName, client->roomId);
+
+            msgToSend.commandCode = SEND_MSG;
+            sprintf(msgToSend.msgBuffer,"> %s entrou na sala!", client->nickName);
+            msgToSend.bufferLength = strlen(msgToSend.msgBuffer);
+
+            broadCastMessage(&msgToSend, roomId);
             return roomId;
         }
     }
@@ -296,7 +313,9 @@ int main(int argc, char *argv[])
 
             pthread_create(&novoCliente->threadId, NULL, threadCliente, (void *) novoCliente);
 
-            imprimeClientes();
+            printf("[INFO] Cliente [%d] conectado!\n", novoCliente->id);
+
+            //imprimeClientes();
         }
     }
     
