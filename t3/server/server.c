@@ -5,6 +5,7 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 #include "chatclient.h"
 #include "../common/chatcommon.h"
@@ -14,17 +15,58 @@
 strCliente * listaClientesConectados = NULL;
 strSalaChat * listaSalasChat = NULL;
 
+pthread_mutex_t clientListMutex = PTHREAD_MUTEX_INITIALIZER;
+
 int newClientId = 0;
 int newRoomId = 0;
 
+int broadCastMessage(strMensagem * message, int roomId) {
+
+    pthread_mutex_lock(&clientListMutex);
+
+    struct sglib_strCliente_iterator iterator;
+    strCliente * elemIterator;
+
+    for(elemIterator = sglib_strCliente_it_init(&iterator, listaClientesConectados); elemIterator != NULL; elemIterator = sglib_strCliente_it_next(&iterator)) {
+
+        if(elemIterator->roomId == roomId) {
+            sendMessage(message, elemIterator);
+        }
+    }
+
+    pthread_mutex_unlock(&clientListMutex);
+}
+
 void terminateClientConnection(strCliente * client) {
+
     sglib_strCliente_delete(&listaClientesConectados, client);
+
+    strMensagem msgToSend;
+
+    msgToSend.commandCode = SEND_MSG;
+    sprintf(msgToSend.msgBuffer,"> %s saiu da sala!", client->nickName);
+    msgToSend.bufferLength = strlen(msgToSend.msgBuffer);
+    broadCastMessage(&msgToSend, client->roomId);
 
     close(client->socketDescriptor);
 
     printf("[INFO] Cliente [%d] desconectado!\n", client->id);
 
     free(client);
+}
+
+void terminateAllConnections(int signal) {
+
+    printf("[SIGINT] Encerrando conexoes...\n");
+
+    struct sglib_strCliente_iterator iterator;
+    strCliente * elemIterator;
+
+    for(elemIterator = sglib_strCliente_it_init(&iterator, listaClientesConectados); elemIterator != NULL; elemIterator = sglib_strCliente_it_next(&iterator)) {
+        terminateClientConnection(elemIterator);
+    }
+
+    exit(0);
 }
 
 int sendMessage(strMensagem * message, strCliente * client) {
@@ -36,18 +78,41 @@ int sendMessage(strMensagem * message, strCliente * client) {
     return bytesTransfered;
 }
 
-int broadCastMessage(strMensagem * message, int roomId) {
 
-    //TODO: MUTEX
-    struct sglib_strCliente_iterator iterator;
-    strCliente * elemIterator;
 
-    for(elemIterator = sglib_strCliente_it_init(&iterator, listaClientesConectados); elemIterator != NULL; elemIterator = sglib_strCliente_it_next(&iterator)) {
+strSalaChat * getChatRoom(int roomId) {
 
-        if(elemIterator->roomId == roomId) {
-            sendMessage(message, elemIterator);
+    struct sglib_strSalaChat_iterator iterator;
+    strSalaChat * elemIterator;
+
+    for(elemIterator = sglib_strSalaChat_it_init(&iterator, listaSalasChat); elemIterator != NULL; elemIterator = sglib_strSalaChat_it_next(&iterator)) {
+
+        if(elemIterator->id == roomId) {
+            //Sala encontrada
+            return elemIterator;
         }
     }
+    //Sala nao encontrada
+    return NULL;
+}
+
+strSalaChat * getChatRoomByName(char * roomName) {
+
+    if(!roomName || strlen(roomName) > 64)
+        return NULL;
+
+    struct sglib_strSalaChat_iterator iterator;
+    strSalaChat * elemIterator;
+
+    for(elemIterator = sglib_strSalaChat_it_init(&iterator, listaSalasChat); elemIterator != NULL; elemIterator = sglib_strSalaChat_it_next(&iterator)) {
+
+        if(strcmp(elemIterator->roomName, roomName) == 0) {
+            //Sala encontrada
+            return elemIterator;
+        }
+    }
+    //Sala nao encontrada
+    return NULL;
 }
 
 int createRoom(char * roomName) {
@@ -112,37 +177,34 @@ int clientJoinRoom(strCliente * client, int roomId) {
                 broadCastMessage(&msgToSend, oldRoomId);
             }
 
+            pthread_mutex_lock(&clientListMutex);
             client->roomId = roomId;
+            pthread_mutex_unlock(&clientListMutex);
+            
+            strSalaChat * newRoom = getChatRoom(roomId);
 
-            printf("[INFO] Cliente [%d][%s] entrou na sala [%d]\n", client->id, client->nickName, client->roomId);
+            printf("[INFO] Cliente [%d][%s] entrou na sala [%d] - %s\n", client->id, client->nickName, client->roomId, newRoom->roomName);
 
             msgToSend.commandCode = SEND_MSG;
             sprintf(msgToSend.msgBuffer,"> %s entrou na sala!", client->nickName);
             msgToSend.bufferLength = strlen(msgToSend.msgBuffer);
 
             broadCastMessage(&msgToSend, roomId);
+
+            //Envia retorno ao cliente
+
+            msgToSend.commandCode = ROOM_JOINED;
+            sprintf(msgToSend.msgBuffer, "%s", newRoom->roomName);
+            msgToSend.bufferLength = strlen(msgToSend.msgBuffer);
+
+            sendMessage(&msgToSend, client);
+
             return roomId;
         }
     }
 
     //Sala nao encontrada
     return -1;
-}
-
-strSalaChat * getChatRoom(int roomId) {
-
-    struct sglib_strSalaChat_iterator iterator;
-    strSalaChat * elemIterator;
-
-    for(elemIterator = sglib_strSalaChat_it_init(&iterator, listaSalasChat); elemIterator != NULL; elemIterator = sglib_strSalaChat_it_next(&iterator)) {
-
-        if(elemIterator->id == roomId) {
-            //Sala encontrada
-            return elemIterator;
-        }
-    }
-    //Sala nao encontrada
-    return NULL;
 }
 
 int parseReceivedMessage(strMensagem * message, strCliente * client) {
@@ -191,13 +253,6 @@ int parseReceivedMessage(strMensagem * message, strCliente * client) {
             
             if(clientJoinRoom(client, newRoomId) == newRoomId) {
                 //Mudou de sala com sucesso
-                strSalaChat * newRoom = getChatRoom(newRoomId);
-
-                response.commandCode = ROOM_JOINED;
-                sprintf(response.msgBuffer, "%s", newRoom->roomName);
-                response.bufferLength = strlen(response.msgBuffer);
-
-                sendMessage(&response,client);
             }
             else {
                 //Erro ao entrar na sala (sala nao encontrada).
@@ -208,6 +263,55 @@ int parseReceivedMessage(strMensagem * message, strCliente * client) {
                 sendMessage(&response,client);
             }
 
+            break;
+        }
+
+        case CREATE_ROOM: {
+
+            char * roomName = message->msgBuffer;
+
+            if(strlen(roomName) > 64) {
+                break;
+            }
+
+            int newRoomId = createRoom(roomName);
+
+            if(newRoomId < 0) {
+                //Erro!
+                printf("[ERRO] Erro ao criar sala! Cliente [%d]\n", client->id);
+
+                response.commandCode = CREATE_ROOM_FAILED;
+                bzero(response.msgBuffer, sizeof(response.msgBuffer));
+                response.bufferLength = 0;
+
+                sendMessage(&response, client);
+                break;
+            }
+            else {
+                printf("[INFO] Sala criada! - [%s][%d] - Cliente [%d]\n", roomName, newRoomId, client->id);
+                clientJoinRoom(client, newRoomId);
+            }
+
+            break;
+        }
+
+        case GET_ROOM_ID: {
+
+            char * roomName = message->msgBuffer;
+            strSalaChat * room = getChatRoomByName(roomName);
+
+            response.commandCode = GET_ROOM_ID_RESPONSE;
+
+            //Ternary operator FTW
+            sprintf(response.msgBuffer, "%d", (room ? room->id : -1));
+            response.bufferLength = strlen(response.msgBuffer);
+
+            sendMessage(&response, client);
+            break;
+        }
+
+        default: {
+            printf("[INFO] Pacote recebido. CommandCode: [%d] \n", message->commandCode);
             break;
         }
     }
@@ -224,10 +328,10 @@ void * threadCliente (void * arg) {
     while(1) {
         
         strMensagem * receivedMessage = (strMensagem *) malloc(sizeof(strMensagem));
-        bzero(receivedMessage, sizeof(receivedMessage));
+        bzero(receivedMessage, sizeof(strMensagem));
 
         /* read from the socket */
-        bytesTransfered = read(client->socketDescriptor, receivedMessage, sizeof(strMensagem));
+        bytesTransfered = recv(client->socketDescriptor, receivedMessage, sizeof(strMensagem), MSG_WAITALL);
         if (bytesTransfered < 0)  {
             printf("ERROR reading from socket");
             break;
@@ -265,6 +369,18 @@ int main(int argc, char *argv[])
     socklen_t clilen;
     char buffer[256];
 
+    //Interceptar sinal SIGINT para fechar as conexoes corretamente
+
+    struct sigaction sigIntHandler;
+
+    sigIntHandler.sa_handler = terminateAllConnections;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+
+    sigaction(SIGINT, &sigIntHandler, NULL);
+
+    //Criar socket
+
     struct sockaddr_in serv_addr, cli_addr;
     
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -275,6 +391,10 @@ int main(int argc, char *argv[])
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
     serv_addr.sin_addr.s_addr = INADDR_ANY;
+
+    //Ignore time-wait sockets on binding
+    int optVal = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optVal, sizeof(optVal));
 
     bzero(&(serv_addr.sin_zero), 8);     
     
@@ -300,7 +420,6 @@ int main(int argc, char *argv[])
         }
         else {
             //Conexao estabelecida
-
             strCliente * novoCliente = (strCliente *) malloc(sizeof(strCliente));
             newClientId++;
 

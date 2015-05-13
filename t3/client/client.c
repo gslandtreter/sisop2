@@ -17,6 +17,7 @@ int socketDescriptor;
 pthread_t readThreadDescriptor;
 pthread_mutex_t screenMutex = PTHREAD_MUTEX_INITIALIZER;
 
+
 char windowTitle[64];
 
 WINDOW * chatWindow, * inputWindow;
@@ -82,6 +83,18 @@ void printToChatWindow(char * strMensagem) {
     pthread_mutex_unlock(&screenMutex);
 }
 
+void joinChatRoom(int roomId) {
+
+    strMensagem mensagem;
+
+    mensagem.commandCode = JOIN_ROOM;
+    sprintf(mensagem.msgBuffer, "%d", roomId);
+
+    mensagem.bufferLength = strlen(mensagem.msgBuffer);
+
+    sendMessage(&mensagem);
+}
+
 int parseReceivedMessage(strMensagem * message) {
 
     switch(message->commandCode) {
@@ -104,6 +117,24 @@ int parseReceivedMessage(strMensagem * message) {
             printToChatWindow(szBuffer);
 
             clearInputWindow();
+            break;
+        }
+
+        case CREATE_ROOM_FAILED: {
+            printToChatWindow("Erro ao criar sala de chat!");
+            break;
+        }
+
+        case GET_ROOM_ID_RESPONSE: {
+
+            int newRoomId = atoi(message->msgBuffer);
+
+            if(newRoomId < 0) {
+                printToChatWindow("Erro ao entrar na sala!");
+            }
+            else {
+                joinChatRoom(newRoomId);
+            }
             break;
         }
     }
@@ -132,13 +163,17 @@ void * readThread (void * arg) {
         bzero(&receivedMessage, sizeof(receivedMessage));
 
         /* read from the socket */
-        bytesTransfered = read(socketDescriptor, &receivedMessage, sizeof(strMensagem));
+        bytesTransfered = recv(socketDescriptor, &receivedMessage, sizeof(strMensagem), MSG_WAITALL);
         if (bytesTransfered < 0)  {
             printf("ERROR reading from socket");
+            close(socketDescriptor);
+            exit(1);
             break;
         }
         else if (bytesTransfered == 0) {
             //EOF
+            close(socketDescriptor);
+            exit(0);
             break;
         }
         else {
@@ -165,12 +200,18 @@ WINDOW * drawNameWindow() {
     return nameWindow;
 }
 
-void joinChatRoom(int roomId) {
+void createChatRoom(char * roomName) {
+    if(!roomName)
+        return;
+
+    if(strlen(roomName) > 64) {
+        printToChatWindow("Nome da sala muito longo!");
+        return;
+    }
 
     strMensagem mensagem;
-
-    mensagem.commandCode = JOIN_ROOM;
-    sprintf(mensagem.msgBuffer, "%d", roomId);
+    mensagem.commandCode = CREATE_ROOM;
+    strcpy(mensagem.msgBuffer, roomName);
 
     mensagem.bufferLength = strlen(mensagem.msgBuffer);
 
@@ -190,7 +231,6 @@ int changeName(const char * newName) {
     mensagem.bufferLength = strlen(mensagem.msgBuffer);
 
     sendMessage(&mensagem);
-
 }
 
 void doHandShake () {
@@ -211,7 +251,7 @@ void doHandShake () {
         bzero(&mensagem, sizeof(strMensagem));
 
         /* read from the socket */
-        bytesTransfered = read(socketDescriptor, &mensagem, sizeof(strMensagem));
+        bytesTransfered = recv(socketDescriptor, &mensagem, sizeof(strMensagem), MSG_WAITALL);
         if (bytesTransfered < 0) {
             printf("ERROR reading from socket\n");
             exit(1);
@@ -221,14 +261,38 @@ void doHandShake () {
     } while(mensagem.commandCode != NAME_CHANGED_OK);
 }
 
-int stringStartsWith(const char * str1, const char * str2) {
+int stringStartsWith(char * str1, char * str2) {
+
+    if(strlen(str2) > strlen(str1))
+        return 0;
+
+    int i;
+
+    for(i = 0; i < strlen(str2); i++) {
+        str1[i] = tolower(str1[i]);
+    }
+
     if (strncmp(str1, str2, strlen(str2)) == 0) {
         return 1;
     }
+
     else return 0;
 }
 
-void parseUserInput(const char * userInput) {
+void getRoomIdRequest(char * roomName) {
+
+    if(!roomName)
+        return;
+
+    strMensagem mensagem;
+    mensagem.commandCode = GET_ROOM_ID;
+    strcpy(mensagem.msgBuffer, roomName);
+    mensagem.bufferLength = strlen(mensagem.msgBuffer);
+
+    sendMessage(&mensagem);
+}
+
+void parseUserInput(char * userInput) {
 
     if(!userInput || strlen(userInput) == 0) 
         return;
@@ -252,7 +316,25 @@ void parseUserInput(const char * userInput) {
 
         }
 
-        //TODO: CreateRoom LeaveRoom JoinRoom
+        else if(stringStartsWith(userInput, "/createroom ")) {
+            char * roomName = strchr(userInput, ' ') + 1;
+            createChatRoom(roomName);
+        }
+
+        else if(stringStartsWith(userInput, "/leaveroom")) {
+            //Entra na sala geral.
+            joinChatRoom(0);
+        }
+
+        else if(stringStartsWith(userInput, "/joinroom ")) {
+            char * roomName = strchr(userInput, ' ') + 1;
+            getRoomIdRequest(roomName);
+        }
+
+        else if(stringStartsWith(userInput, "/quit")) {
+            close(socketDescriptor);
+            exit(0);
+        }
         
         else {
             //Comando invalido
@@ -268,8 +350,6 @@ void parseUserInput(const char * userInput) {
 
         sendMessage(&mensagem);
     }
-    
-
 }
 
 void mainLoop() {
