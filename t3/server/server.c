@@ -16,13 +16,12 @@ strCliente * listaClientesConectados = NULL;
 strSalaChat * listaSalasChat = NULL;
 
 pthread_mutex_t clientListMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t roomListMutex = PTHREAD_MUTEX_INITIALIZER;
 
 int newClientId = 0;
 int newRoomId = 0;
 
 int broadCastMessage(strMensagem * message, int roomId) {
-
-    pthread_mutex_lock(&clientListMutex);
 
     struct sglib_strCliente_iterator iterator;
     strCliente * elemIterator;
@@ -33,13 +32,13 @@ int broadCastMessage(strMensagem * message, int roomId) {
             sendMessage(message, elemIterator);
         }
     }
-
-    pthread_mutex_unlock(&clientListMutex);
 }
 
 void terminateClientConnection(strCliente * client) {
 
+    pthread_mutex_lock(&clientListMutex);
     sglib_strCliente_delete(&listaClientesConectados, client);
+    pthread_mutex_unlock(&clientListMutex);
 
     strMensagem msgToSend;
 
@@ -124,7 +123,7 @@ int createRoom(char * roomName) {
 
     struct sglib_strSalaChat_iterator iterator;
     strSalaChat * elemIterator;
-
+    
     for(elemIterator = sglib_strSalaChat_it_init(&iterator, listaSalasChat); elemIterator != NULL; elemIterator = sglib_strSalaChat_it_next(&iterator)) {
 
         if(!strcmp(roomName, elemIterator->roomName)) {
@@ -140,7 +139,9 @@ int createRoom(char * roomName) {
     strcpy(novaSala->roomName, roomName);
     //novaSala->userCount = 0;
 
+    pthread_mutex_lock(&roomListMutex);
     sglib_strSalaChat_add(&listaSalasChat, novaSala);
+    pthread_mutex_unlock(&roomListMutex);
 
     printf("[INFO] Criada sala [%d] [%s]\n", novaSala->id, novaSala->roomName);
 
@@ -149,7 +150,6 @@ int createRoom(char * roomName) {
 
 int clientJoinRoom(strCliente * client, int roomId) {
 
-    //TODO: MUTEX
     if(!client) {
         return -1;
     }
@@ -202,7 +202,6 @@ int clientJoinRoom(strCliente * client, int roomId) {
             return roomId;
         }
     }
-
     //Sala nao encontrada
     return -1;
 }
@@ -356,9 +355,11 @@ void imprimeClientes() {
     struct sglib_strCliente_iterator iterator;
     strCliente * elemIterator;
 
+    pthread_mutex_lock(&clientListMutex);
     for(elemIterator = sglib_strCliente_it_init(&iterator, listaClientesConectados); elemIterator != NULL; elemIterator = sglib_strCliente_it_next(&iterator)) {
         printf("    [INFO] Cliente conectado: [%d] [%s]\n", elemIterator->id, elemIterator->nickName);
     }
+    pthread_mutex_unlock(&clientListMutex);
 
     printf("[INFO] Total de clientes conectados: %d\n", sglib_strCliente_len(listaClientesConectados));
 }
@@ -428,7 +429,9 @@ int main(int argc, char *argv[])
             novoCliente->socketDescriptor = newsockfd;
             strcpy(novoCliente->nickName, "Sem Nome");
 
+            pthread_mutex_lock(&clientListMutex);
             sglib_strCliente_add(&listaClientesConectados, novoCliente);
+            pthread_mutex_unlock(&clientListMutex);
 
             pthread_create(&novoCliente->threadId, NULL, threadCliente, (void *) novoCliente);
 
