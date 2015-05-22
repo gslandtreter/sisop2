@@ -208,6 +208,10 @@ void createChatRoom(char * roomName) {
         printToChatWindow("Nome da sala muito longo!");
         return;
     }
+    else if(strlen(roomName) == 0) {
+        printToChatWindow("Nome da sala muito curto!");
+        return;
+    }
 
     strMensagem mensagem;
     mensagem.commandCode = CREATE_ROOM;
@@ -220,7 +224,7 @@ void createChatRoom(char * roomName) {
 
 int changeName(const char * newName) {
 
-    if(!newName || strlen(newName) > 64) {
+    if(!newName || strlen(newName) > 64 || strlen(newName) == 0) {
         //Nome muito longo!
         return 0;
     }
@@ -263,16 +267,19 @@ void doHandShake () {
 
 int stringStartsWith(char * str1, char * str2) {
 
+    char strBuffer[512];
+
     if(strlen(str2) > strlen(str1))
         return 0;
 
+    strcpy(strBuffer, str1);
     int i;
 
     for(i = 0; i < strlen(str2); i++) {
-        str1[i] = tolower(str1[i]);
+        strBuffer[i] = tolower(strBuffer[i]);
     }
 
-    if (strncmp(str1, str2, strlen(str2)) == 0) {
+    if (strncmp(strBuffer, str2, strlen(str2)) == 0) {
         return 1;
     }
 
@@ -303,7 +310,14 @@ void parseUserInput(char * userInput) {
         // Comando
 
         if(stringStartsWith(userInput, "/help")) {
-            //TODO: Print Help!
+            printToChatWindow(" ---- Comandos disponiveis:      ---- ");
+            printToChatWindow(" ------------------------------------ ");
+            printToChatWindow(" ---- /changename [novo nome]    ---- ");
+            printToChatWindow(" ---- /createroom [nome da sala] ---- ");
+            printToChatWindow(" ---- /joinroom [nome da sala]   ---- ");
+            printToChatWindow(" ---- /leaveroom                 ---- ");
+            printToChatWindow(" ---- /quit                      ---- ");
+            printToChatWindow(" ------------------------------------ ");
         }
         else if(stringStartsWith(userInput, "/changename ")) {
             char * newName = strchr(userInput, ' ') + 1;
